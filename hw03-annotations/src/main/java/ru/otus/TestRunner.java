@@ -3,6 +3,7 @@ package ru.otus;
 import ru.otus.annotations.After;
 import ru.otus.annotations.Before;
 import ru.otus.annotations.Test;
+import ru.otus.utils.BeforeAndAfter;
 import ru.otus.utils.ReflectionHelper;
 import ru.otus.utils.Summary;
 
@@ -12,8 +13,8 @@ public class TestRunner {
     public static void main(String[] args) throws ClassNotFoundException {
         if (args.length > 0) {
             for (String className : args) {
-                Class<?> clazz = Class.forName("ru.otus." + className);
-                Method[] beforeAndAfter = getMethodsAnnotatedWithBeforeAndAfter(clazz);
+                Class<?> clazz = Class.forName(className);
+                BeforeAndAfter beforeAndAfter = getMethodsAnnotatedWithBeforeAndAfter(clazz);
                 Summary summary = invokeTriple(clazz, beforeAndAfter);
                 System.out.println(summary);
             }
@@ -22,29 +23,34 @@ public class TestRunner {
         }
     }
 
-    private static Method[] getMethodsAnnotatedWithBeforeAndAfter(final Class<?> clazz) {
-        final Method[] methods = new Method[2];
+    private static BeforeAndAfter getMethodsAnnotatedWithBeforeAndAfter(final Class<?> clazz) {
+        BeforeAndAfter beforeAndAfter = new BeforeAndAfter();
 
         for (final Method method : clazz.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Before.class)) {
-                methods[0] = method;
+                beforeAndAfter.setBefore(method);
             }
             if (method.isAnnotationPresent(After.class)) {
-                methods[1] = method;
+                beforeAndAfter.setAfter(method);
             }
         }
-        return methods;
+        return beforeAndAfter;
     }
 
-    private static Summary invokeTriple(final Class<?> clazz, Method[] beforeAndAfter) {
+    private static Summary invokeTriple(final Class<?> clazz, BeforeAndAfter beforeAndAfter) {
         Summary summary = new Summary(clazz.getName());
         for (final Method method : clazz.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Test.class)) {
-                summary.testIncrease();
                 Object instance = ReflectionHelper.instantiate(clazz);
-                if (beforeAndAfter[0] != null) ReflectionHelper.callMethod(instance, beforeAndAfter[0].getName());
-                checkTestAndInvoke(summary, method, instance);
-                if (beforeAndAfter[1] != null) ReflectionHelper.callMethod(instance, beforeAndAfter[1].getName());
+                try {
+                    if (beforeAndAfter.getBefore() != null)
+                        ReflectionHelper.callMethod(instance, beforeAndAfter.getBefore().getName());
+                    summary.testIncrease();
+                    checkTestAndInvoke(summary, method, instance);
+                } finally {
+                    if (beforeAndAfter.getAfter() != null)
+                        ReflectionHelper.callMethod(instance, beforeAndAfter.getAfter().getName());
+                }
             }
         }
         return summary;
@@ -57,6 +63,8 @@ public class TestRunner {
         } catch (RuntimeException e) {
             if (e.getCause().getCause() != null && e.getCause().getCause().getClass().equals(AssertionError.class)) {
                 summary.failureIncrease();
+            } else {
+                throw e;
             }
         }
     }
